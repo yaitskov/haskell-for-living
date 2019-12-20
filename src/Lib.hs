@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeOperators   #-}
@@ -13,6 +14,7 @@ module Lib
 
 import Data.Aeson
 import Data.Aeson.TH
+import Text.RawString.QQ
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
@@ -59,7 +61,20 @@ staticServer = serveDirectoryFileServer "."
 
 hello = return "Hello world from Servant"
 
-myIndex = return "<html><head><title>index page</title></head><body><a href=\"/hello\">Hello</a></body></html>"
+myIndex = return [r|<!DOCTYPE html>
+<html>
+<head>
+  <title>index page</title>
+</head>
+<body>
+  <h1>Well on Servant demo site!</h1>
+  <ul>
+    <li><a href="/hello">Hello</a></li>
+    <li><a href="/static">Static files</a></li>
+  </ul>
+</body>
+</html>
+|]
 
 app :: Application
 app = serve api (staticServer :<|> hello :<|> myIndex)

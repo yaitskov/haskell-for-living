@@ -25,6 +25,7 @@ library
                      , ctrie
                      , http-media
                      , bytestring
+                     , raw-strings-qq
 
   default-language:    Haskell2010
 
