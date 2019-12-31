@@ -9,6 +9,7 @@
 
 module Lib
     ( startApp
+--     , myIndex
     , app
     ) where
 
@@ -19,7 +20,7 @@ import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
 import Control.Concurrent.Map as CCM
-import Control.Monad.Trans.Reader  (ReaderT, ask, runReaderT)
+import Control.Monad.Trans.Reader  (ReaderT, ask, runReaderT, runReader)
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
 import Network.HTTP.Media ((//), (/:))
 import Data.ByteString.Lazy.Char8 as BSL
@@ -50,6 +51,8 @@ instance Accept Html where
 instance MimeRender Html String where
   mimeRender _ val = BSL.pack val
 
+-- type API = "static" :> Raw :<|> "hello" :> Get '[PlainText] String :<|> Get '[Html] String
+-- type API = Get '[Html] String
 type API = "static" :> Raw :<|> "hello" :> Get '[PlainText] String :<|> Get '[Html] String
 
 api :: Proxy API
@@ -61,23 +64,35 @@ staticServer = serveDirectoryFileServer "."
 
 hello = return "Hello world from Servant"
 
-myIndex = return [r|<!DOCTYPE html>
+indexHead :: String
+indexHead = [r|<!DOCTYPE html>
 <html>
 <head>
   <title>index page</title>
 </head>
 <body>
-  <h1>Well on Servant demo site!</h1>
+  <h1>Welcome on Servant demo site!</h1>
+  <p> n = |]
+
+indexTail :: String
+indexTail = [r|
   <ul>
     <li><a href="/hello">Hello</a></li>
-    <li><a href="/static">Static files</a></li>
+    <li><a href="/static/">Static files</a></li>
   </ul>
 </body>
 </html>
 |]
 
+myIndex = do
+  n <- ask
+  return $ indexHead ++ (show n) ++ indexTail
+
 app :: Application
-app = serve api (staticServer :<|> hello :<|> myIndex)
+app = serve api (hoistServer api (\x -> return (runReader x 877)) (staticServer :<|> hello :<|> myIndex))
+-- app = serve api (hoistServer api (\x -> return (runReader x 777)) (staticServer :<|> hello :<|> myIndex))
+
+-- app = serveWithContext api (777 :. EmptyContext)  (hoistServerWithContext api Proxy :: Proxy '[] (\x -> return (runReader x  (staticServer :<|> hello :<|> myIndex)
 
 startApp :: IO ()
 startApp = run 9081 app
