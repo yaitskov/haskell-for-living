@@ -12,13 +12,16 @@ module Lib
     , app
     ) where
 
+import qualified Language.C.Inline as C
+
 import Data.Aeson
 import Data.Aeson.TH
 import Text.RawString.QQ
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
-import Control.Exception (try, throw)
+import System.Exit
+import Control.Exception (try, throw, displayException)
 --  import Control.Monad.Catch
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.Map as CCM
@@ -28,6 +31,10 @@ import Network.HTTP.Media ((//), (/:))
 import Data.ByteString.Lazy.Char8 as BSL
 import Data.ByteString.Char8 as BS
 import Data.CaseInsensitive as CI
+
+C.include "<stdio.h>"
+C.include "<stdlib.h>"
+
 type RedirectDest = String
 
 data RedirectEntry = RedirectEntry
@@ -56,7 +63,7 @@ instance {-# OVERLAPS #-} (Show a) => MimeRender PlainText a where
 
 type RePar = QueryParam' '[Required, Strict]
 
-type API = "add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool :<|> "static" :> Raw :<|> "hello" :> Get '[PlainText] String :<|> Get '[Html] String :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String :<|> Capture "key" RedirectKey :> Get '[PlainText] ()
+type API = "die-fast" :> Post '[PlainText] () :<|> "add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool :<|> "static" :> Raw :<|> "hello" :> Get '[PlainText] String :<|> Get '[Html] String :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String :<|> Capture "key" RedirectKey :> Get '[PlainText] ()
 
 api :: Proxy API
 api = Proxy
@@ -94,11 +101,19 @@ indexTail :: String
 indexTail = [r|
   <ul>
     <li><a href="/hello">Hello</a></li>
+    <li><form method="POST" action="/die-fast"><button type="submit">Die Fast</button></form></li>
     <li><a href="/static/">Static files</a></li>
   </ul>
 </body>
 </html>
 |]
+
+
+dieFast = do
+  liftIO $ Prelude.putStrLn "Bye-bye..."
+  x <- liftIO $ [C.exp| void{ exit(0) } |]
+  liftIO $ Prelude.putStrLn $ show x ++ " characters printed."
+  liftIO $ Prelude.putStrLn "I am zombie!"
 
 myIndex = do
   n <- ask
@@ -110,12 +125,10 @@ initState = do
   CCM.insert "sam" RedirectEntry { destination = "http://cia.gov" } m
   return  MyAppState { m = m, luckyNumber = 877 }
 
--- instance Exception
-
 trans :: MyAppState -> ReaderT MyAppState IO x -> Handler x
 trans st rdr = Handler $ liftIO (try (runReaderT rdr st)) >>=
   \ei -> case ei of
-    Left e -> throwError e
+    Left e -> liftIO (Prelude.putStrLn $ "My Exception " ++ displayException e) >> throwError e
     Right ok -> return ok
 
 addRedirectMapping :: RedirectKey -> RedirectDest -> ReaderT MyAppState IO Bool
@@ -126,27 +139,17 @@ addRedirectMapping key dest = do
 app :: MyAppState -> Application
 app appSt = serve api (hoistServer api
                        (\x -> trans appSt x)
-                       (addRedirectMapping :<|> staticServer :<|> hello :<|> myIndex :<|> noWay :<|> resolveAndRedirect))
--- app = serve api (hoistServer api (\x -> return (runReader x 777)) (staticServer :<|> hello :<|> myIndex))
-
--- app = serveWithContext api (777 :. EmptyContext)  (hoistServerWithContext api Proxy :: Proxy '[] (\x -> return (runReader x  (staticServer :<|> hello :<|> myIndex)
+                       (dieFast :<|> addRedirectMapping :<|> staticServer :<|> hello :<|> myIndex :<|> noWay :<|> resolveAndRedirect))
 
 startApp :: IO ()
 startApp = do
   st <- initState
   runSettings (setTimeout 3
-                (setPort 9081
-                 (setOnOpen (\addr -> Prelude.putStrLn "New conneciton" >> return True)
-                  (setBeforeMainLoop
-                   (Prelude.putStrLn "servant is ready to serve")
-                   defaultSettings))))
+               --(setInstallShutdownHandler (\closeSocket ->
+                (setServerName (BS.pack "DieHard")
+                 (setPort 9081
+                  (setOnOpen (\addr -> Prelude.putStrLn "New conneciton" >> return True)
+                   (setBeforeMainLoop
+                     (Prelude.putStrLn "servant is ready to serve")
+                     defaultSettings)))))
     (app st)
-
-
---storePair key value =
--- returnUsers = return users
-
--- users :: [User]
--- users = [ User 1 "Isaac" "Newton"
---         , User 2 "Albert" "Einstein"
---         ]
