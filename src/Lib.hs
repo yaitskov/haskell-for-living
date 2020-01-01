@@ -66,14 +66,18 @@ instance {-# OVERLAPS #-} (Show a) => MimeRender PlainText a where
 
 type RePar = QueryParam' '[Required, Strict]
 
-type API = ("die-slowly" :> Post '[PlainText] String
-            :<|> "die-fast" :> Post '[PlainText] ()
-            :<|> "add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool
-            :<|> "static" :> Raw
-            :<|> "hello" :> Get '[PlainText] String
-            :<|> Get '[Html] String
-            :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String
-            :<|> Capture "key" RedirectKey :> Get '[PlainText] ())
+type FuneralApi = ("die-slowly" :> Post '[PlainText] String
+                   :<|> "die-fast" :> Post '[PlainText] ())
+
+type BusinessLogicApi = ("add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool
+                          :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String
+                          :<|> Capture "key" RedirectKey :> Get '[PlainText] ())
+
+type MiscApi = ("static" :> Raw
+                :<|> "hello" :> Get '[PlainText] String
+                :<|> Get '[Html] String)
+
+type API = (FuneralApi :<|> MiscApi :<|> BusinessLogicApi)
 
 api :: Proxy API
 api = Proxy
@@ -157,10 +161,15 @@ addRedirectMapping key dest = do
   st <- ask
   liftIO $ CCM.insert key RedirectEntry { destination = dest } $ m st
 
+
+funeral = dieSlowly :<|> dieFast
+businessLogic = addRedirectMapping :<|> noWay :<|> resolveAndRedirect
+misc = staticServer :<|> hello :<|> myIndex
+
 app :: MyAppState -> Application
 app appSt = serve api (hoistServer api
                        (\x -> trans appSt x)
-                       (dieSlowly :<|> dieFast :<|> addRedirectMapping :<|> staticServer :<|> hello :<|> myIndex :<|> noWay :<|> resolveAndRedirect))
+                       (funeral :<|> misc :<|> businessLogic))
 
 startApp :: IO ()
 startApp = do
