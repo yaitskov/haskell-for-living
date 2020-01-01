@@ -25,6 +25,8 @@ import Control.Exception (try, throw, displayException)
 --  import Control.Monad.Catch
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.Map as CCM
+-- import Control.Concurrent.STM (readTVarIO, newTVarIO, atomically)
+import Data.IORef (readIORef, writeIORef, newIORef, IORef)
 import Control.Monad.Trans.Reader  (ReaderT, ask, runReaderT, runReader)
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
 import Network.HTTP.Media ((//), (/:))
@@ -47,6 +49,7 @@ type RedirectKey = String
 
 data MyAppState = MyAppState {
   m :: CCM.Map RedirectKey RedirectEntry,
+  serverShutdown  :: IORef (IO ()),
   luckyNumber :: Integer
 }
 
@@ -63,7 +66,14 @@ instance {-# OVERLAPS #-} (Show a) => MimeRender PlainText a where
 
 type RePar = QueryParam' '[Required, Strict]
 
-type API = "die-fast" :> Post '[PlainText] () :<|> "add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool :<|> "static" :> Raw :<|> "hello" :> Get '[PlainText] String :<|> Get '[Html] String :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String :<|> Capture "key" RedirectKey :> Get '[PlainText] ()
+type API = ("die-slowly" :> Post '[PlainText] String
+            :<|> "die-fast" :> Post '[PlainText] ()
+            :<|> "add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool
+            :<|> "static" :> Raw
+            :<|> "hello" :> Get '[PlainText] String
+            :<|> Get '[Html] String
+            :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String
+            :<|> Capture "key" RedirectKey :> Get '[PlainText] ())
 
 api :: Proxy API
 api = Proxy
@@ -102,6 +112,7 @@ indexTail = [r|
   <ul>
     <li><a href="/hello">Hello</a></li>
     <li><form method="POST" action="/die-fast"><button type="submit">Die Fast</button></form></li>
+    <li><form method="POST" action="/die-slowly"><button type="submit">Die Slowly</button></form></li>
     <li><a href="/static/">Static files</a></li>
   </ul>
 </body>
@@ -109,11 +120,18 @@ indexTail = [r|
 |]
 
 
+cExitNormal :: IO ()
+cExitNormal = do
+  x <- [C.exp| void{ exit(0) } |]
+  Prelude.putStrLn $ show x
+
 dieFast = do
-  liftIO $ Prelude.putStrLn "Bye-bye..."
-  x <- liftIO $ [C.exp| void{ exit(0) } |]
-  liftIO $ Prelude.putStrLn $ show x ++ " characters printed."
-  liftIO $ Prelude.putStrLn "I am zombie!"
+  liftIO $ Prelude.putStrLn "By..." >> cExitNormal
+
+dieSlowly = do
+  st <- ask
+  liftIO $ Prelude.putStrLn "Bye-bye..." >> readIORef (serverShutdown st) >>= \cb -> cb
+  return "You was able to get my response but I am already dead. Bye-bye..."
 
 myIndex = do
   n <- ask
@@ -123,7 +141,10 @@ initState = do
   m <- CCM.empty
   CCM.insert "default" RedirectEntry { destination = "http://ya.ru" } m
   CCM.insert "sam" RedirectEntry { destination = "http://cia.gov" } m
-  return  MyAppState { m = m, luckyNumber = 877 }
+  shutdownCbBox <- liftIO $ newIORef (Prelude.putStrLn "Server shutdown callback is not set")
+  return  MyAppState { m = m,
+                       luckyNumber = 877,
+                       serverShutdown = shutdownCbBox }
 
 trans :: MyAppState -> ReaderT MyAppState IO x -> Handler x
 trans st rdr = Handler $ liftIO (try (runReaderT rdr st)) >>=
@@ -139,17 +160,18 @@ addRedirectMapping key dest = do
 app :: MyAppState -> Application
 app appSt = serve api (hoistServer api
                        (\x -> trans appSt x)
-                       (dieFast :<|> addRedirectMapping :<|> staticServer :<|> hello :<|> myIndex :<|> noWay :<|> resolveAndRedirect))
+                       (dieSlowly :<|> dieFast :<|> addRedirectMapping :<|> staticServer :<|> hello :<|> myIndex :<|> noWay :<|> resolveAndRedirect))
 
 startApp :: IO ()
 startApp = do
   st <- initState
   runSettings (setTimeout 3
-               --(setInstallShutdownHandler (\closeSocket ->
+                (setInstallShutdownHandler (\closeSocket -> Prelude.putStrLn "Binding callback for closing socket..." >>
+                                             writeIORef (serverShutdown st) closeSocket)
                 (setServerName (BS.pack "DieHard")
                  (setPort 9081
                   (setOnOpen (\addr -> Prelude.putStrLn "New conneciton" >> return True)
                    (setBeforeMainLoop
                      (Prelude.putStrLn "servant is ready to serve")
-                     defaultSettings)))))
+                     defaultSettings))))))
     (app st)
