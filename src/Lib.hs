@@ -134,7 +134,14 @@ app appSt = serve api (hoistServer api
 startApp :: IO ()
 startApp = do
   st <- initState
-  run 9081 (app st)
+  runSettings (setTimeout 3
+                (setPort 9081
+                 (setOnOpen (\addr -> Prelude.putStrLn "New conneciton" >> return True)
+                  (setBeforeMainLoop
+                   (Prelude.putStrLn "servant is ready to serve")
+                   defaultSettings))))
+    (app st)
+
 
 --storePair key value =
 -- returnUsers = return users
