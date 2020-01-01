@@ -51,10 +51,12 @@ instance Accept Html where
 instance MimeRender Html String where
   mimeRender _ val = BSL.pack val
 
-instance MimeRender PlainText () where
-  mimeRender _ _ = BSL.pack "()"
+instance {-# OVERLAPS #-} (Show a) => MimeRender PlainText a where
+  mimeRender _ val = BSL.pack $ show val
 
-type API = "static" :> Raw :<|> "hello" :> Get '[PlainText] String :<|> Get '[Html] String :<|> "no-way" :> QueryParam' '[Required, Strict] "path" String :> Get '[PlainText] String :<|> Capture "key" RedirectKey :> Get '[PlainText] ()
+type RePar = QueryParam' '[Required, Strict]
+
+type API = "add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool :<|> "static" :> Raw :<|> "hello" :> Get '[PlainText] String :<|> Get '[Html] String :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String :<|> Capture "key" RedirectKey :> Get '[PlainText] ()
 
 api :: Proxy API
 api = Proxy
@@ -116,11 +118,15 @@ trans st rdr = Handler $ liftIO (try (runReaderT rdr st)) >>=
     Left e -> throwError e
     Right ok -> return ok
 
+addRedirectMapping :: RedirectKey -> RedirectDest -> ReaderT MyAppState IO Bool
+addRedirectMapping key dest = do
+  st <- ask
+  liftIO $ CCM.insert key RedirectEntry { destination = dest } $ m st
 
 app :: MyAppState -> Application
 app appSt = serve api (hoistServer api
                        (\x -> trans appSt x)
-                       (staticServer :<|> hello :<|> myIndex :<|> noWay :<|> resolveAndRedirect))
+                       (addRedirectMapping :<|> staticServer :<|> hello :<|> myIndex :<|> noWay :<|> resolveAndRedirect))
 -- app = serve api (hoistServer api (\x -> return (runReader x 777)) (staticServer :<|> hello :<|> myIndex))
 
 -- app = serveWithContext api (777 :. EmptyContext)  (hoistServerWithContext api Proxy :: Proxy '[] (\x -> return (runReader x  (staticServer :<|> hello :<|> myIndex)
