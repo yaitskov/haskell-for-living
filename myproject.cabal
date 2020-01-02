@@ -27,6 +27,8 @@ library
                      , bytestring
                      , case-insensitive
                      , inline-c
+                     , servant-blaze
+                     , blaze-html
                      , raw-strings-qq
 
   default-language:    Haskell2010

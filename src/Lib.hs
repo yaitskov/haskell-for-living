@@ -1,4 +1,5 @@
-{-# LANGUAGE DataKinds       #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -34,6 +35,9 @@ import Data.ByteString.Lazy.Char8 as BSL
 import Data.ByteString.Char8 as BS
 import Data.CaseInsensitive as CI
 
+import Servant.HTML.Blaze
+import qualified Text.Blaze.Html5 as H
+
 C.include "<stdio.h>"
 C.include "<stdlib.h>"
 
@@ -53,6 +57,8 @@ data MyAppState = MyAppState {
   luckyNumber :: Integer
 }
 
+type AddRedirectMappingPage = H.Html
+
 data Html
 
 instance Accept Html where
@@ -69,7 +75,10 @@ type RePar = QueryParam' '[Required, Strict]
 type FuneralApi = ("die-slowly" :> Post '[PlainText] String
                    :<|> "die-fast" :> Post '[PlainText] ())
 
-type BusinessLogicApi = ("add-mapping" :> RePar "key" RedirectKey :> RePar "destination" RedirectDest :> Post '[PlainText] Bool
+type BusinessLogicApi = ("add-mapping" :> (RePar "key" RedirectKey
+                                           :> RePar "destination" RedirectDest
+                                           :> Post '[PlainText] Bool
+                                           :<|> Get '[HTML] AddRedirectMappingPage)
                           :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String
                           :<|> Capture "key" RedirectKey :> Get '[PlainText] ())
 
@@ -115,6 +124,7 @@ indexTail :: String
 indexTail = [r|
   <ul>
     <li><a href="/hello">Hello</a></li>
+    <li><a href="/add-mapping">Add redirect mapping</a></li>
     <li><form method="POST" action="/die-fast"><button type="submit">Die Fast</button></form></li>
     <li><form method="POST" action="/die-slowly"><button type="submit">Die Slowly</button></form></li>
     <li><a href="/static/">Static files</a></li>
@@ -156,6 +166,15 @@ trans st rdr = Handler $ liftIO (try (runReaderT rdr st)) >>=
     Left e -> liftIO (Prelude.putStrLn $ "My Exception " ++ displayException e) >> throwError e
     Right ok -> return ok
 
+addRedirectMappingPage :: ReaderT MyAppState IO AddRedirectMappingPage
+addRedirectMappingPage = return $ H.docTypeHtml $ do
+  H.head $ do
+    H.title "New redirect"
+  H.body $ do
+    H.h1 "New redirect"
+    H.p "Enter key which is path relative to root of url"
+    H.p "Then enter full destination URL with http:// or https://"
+
 addRedirectMapping :: RedirectKey -> RedirectDest -> ReaderT MyAppState IO Bool
 addRedirectMapping key dest = do
   st <- ask
@@ -163,7 +182,7 @@ addRedirectMapping key dest = do
 
 
 funeral = dieSlowly :<|> dieFast
-businessLogic = addRedirectMapping :<|> noWay :<|> resolveAndRedirect
+businessLogic = (addRedirectMapping :<|> addRedirectMappingPage) :<|> noWay :<|> resolveAndRedirect
 misc = staticServer :<|> hello :<|> myIndex
 
 app :: MyAppState -> Application
