@@ -7,6 +7,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+
 
 module Lib
     ( startApp
@@ -21,6 +23,7 @@ import Text.RawString.QQ
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
+import qualified Data.Text as T
 import System.Exit
 import Control.Exception (try, throw, displayException)
 --  import Control.Monad.Catch
@@ -37,6 +40,10 @@ import Data.CaseInsensitive as CI
 
 import Servant.HTML.Blaze
 import qualified Text.Blaze.Html5 as H
+import qualified Text.Blaze.Html5.Attributes as A
+
+import GHC.Generics
+import Web.FormUrlEncoded (FromForm)
 
 C.include "<stdio.h>"
 C.include "<stdlib.h>"
@@ -59,6 +66,13 @@ data MyAppState = MyAppState {
 
 type AddRedirectMappingPage = H.Html
 
+data RedirectMappingForm = RedirectMappingForm
+  { key :: !T.Text,
+    destination :: !T.Text
+  } deriving (Show, Eq, Generic)
+
+instance FromForm RedirectMappingForm
+
 data Html
 
 instance Accept Html where
@@ -78,7 +92,8 @@ type FuneralApi = ("die-slowly" :> Post '[PlainText] String
 type BusinessLogicApi = ("add-mapping" :> (RePar "key" RedirectKey
                                            :> RePar "destination" RedirectDest
                                            :> Post '[PlainText] Bool
-                                           :<|> Get '[HTML] AddRedirectMappingPage)
+                                           :<|> Get '[HTML] AddRedirectMappingPage
+                                           :<|> "via-form" :> ReqBody '[FormUrlEncoded] RedirectMappingForm :> Post '[PlainText] ())
                           :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String
                           :<|> Capture "key" RedirectKey :> Get '[PlainText] ())
 
@@ -100,7 +115,7 @@ resolveAndRedirect key = do
   destO <- liftIO $ CCM.lookup key $ m st
   case destO of
     Nothing -> redirectTo $ "/no-way?path=" ++ key
-    Just entry -> redirectTo $ destination entry
+    Just entry -> redirectTo $ destination (entry :: RedirectEntry)
 
 staticServer = serveDirectoryFileServer "."
 
@@ -166,14 +181,34 @@ trans st rdr = Handler $ liftIO (try (runReaderT rdr st)) >>=
     Left e -> liftIO (Prelude.putStrLn $ "My Exception " ++ displayException e) >> throwError e
     Right ok -> return ok
 
+
 addRedirectMappingPage :: ReaderT MyAppState IO AddRedirectMappingPage
 addRedirectMappingPage = return $ H.docTypeHtml $ do
   H.head $ do
     H.title "New redirect"
   H.body $ do
     H.h1 "New redirect"
-    H.p "Enter key which is path relative to root of url"
-    H.p "Then enter full destination URL with http:// or https://"
+    H.div $ do
+      H.form H.! A.method "POST" H.! A.action "/add-mapping/via-form" $ do
+        H.div $ do
+          H.label $ do
+            H.span $ "Key"
+            H.input H.! A.name "key" H.! A.type_ "text"
+          H.p "Enter key which is path relative to root of url"
+        H.div $ do
+          H.label $ do
+            H.span $ "Destiation URL"
+            H.input H.! A.name "destination"
+            H.p "Then enter full destination URL with http:// or https://"
+        H.div $ do
+          H.button H.! A.type_ "submit" $ do
+            H.span $ "add"
+
+
+addRedirectMappingFromForm :: RedirectMappingForm -> ReaderT MyAppState IO ()
+addRedirectMappingFromForm form = do
+  addRedirectMapping (T.unpack $ key form) (T.unpack $ destination (form :: RedirectMappingForm))
+  redirectTo "/"
 
 addRedirectMapping :: RedirectKey -> RedirectDest -> ReaderT MyAppState IO Bool
 addRedirectMapping key dest = do
@@ -182,7 +217,7 @@ addRedirectMapping key dest = do
 
 
 funeral = dieSlowly :<|> dieFast
-businessLogic = (addRedirectMapping :<|> addRedirectMappingPage) :<|> noWay :<|> resolveAndRedirect
+businessLogic = (addRedirectMapping :<|> addRedirectMappingPage :<|> addRedirectMappingFromForm) :<|> noWay :<|> resolveAndRedirect
 misc = staticServer :<|> hello :<|> myIndex
 
 app :: MyAppState -> Application
