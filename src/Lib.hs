@@ -199,13 +199,12 @@ showRedirectsSortedByKey = do
       H.title "Redirects by key"
     H.body $ do
       H.h1 "Redirects by key"
-      forM_ [1,2,3] (\x -> return $ (H.p . H.toHtml . show) x) :: H.Html
+      -- forM_ [1,2,3] (\x -> return $ (H.p . H.toHtml . show) x) :: H.Html
       --      H.table $ forM_ sortedPairs (\(key,dest) -> do
-      H.table $ do
-        forM_ sortedPairs (\(key,dest) -> do
-                              return $ H.tr $ do
-                                H.td $ H.toHtml key
-                                H.td $ H.toHtml $ destination (dest :: RedirectEntry))
+      H.table H.! H.customAttribute "border" "1" $ do
+        forM_ sortedPairs (\(key,dest) -> H.tr  $ do
+                              H.td $ H.toHtml key
+                              H.td $ H.toHtml $ destination (dest :: RedirectEntry))
 
 
 addRedirectMappingPage :: ReaderT MyAppState IO AddRedirectMappingPage
