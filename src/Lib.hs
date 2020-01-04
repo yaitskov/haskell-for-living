@@ -17,12 +17,14 @@ module Lib
 
 import qualified Language.C.Inline as C
 
+-- import Data.Tagged
 import Data.Aeson
 import Data.Aeson.TH
 import Text.RawString.QQ
 import Network.Wai
 import Network.Wai.Handler.Warp
 import Servant
+import qualified Data.List as L
 import qualified Data.Text as T
 import System.Exit
 import Control.Exception (try, throw, displayException)
@@ -37,7 +39,7 @@ import Network.HTTP.Media ((//), (/:))
 import Data.ByteString.Lazy.Char8 as BSL
 import Data.ByteString.Char8 as BS
 import Data.CaseInsensitive as CI
-
+import Control.Monad (forM_)
 import Servant.HTML.Blaze
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
@@ -53,7 +55,7 @@ type RedirectDest = String
 data RedirectEntry = RedirectEntry
   {
     destination :: RedirectDest
-  } deriving (Eq, Show)
+  } deriving (Eq, Ord, Show)
 
 
 type RedirectKey = String
@@ -84,18 +86,22 @@ instance MimeRender Html String where
 instance {-# OVERLAPS #-} (Show a) => MimeRender PlainText a where
   mimeRender _ val = BSL.pack $ show val
 
+type MyAppMo = ReaderT MyAppState IO
+type PageWithListOfRedirect = H.Html -- Tagged "page-with-redirects" H.Html
+
 type RePar = QueryParam' '[Required, Strict]
 
 type FuneralApi = ("die-slowly" :> Post '[PlainText] String
                    :<|> "die-fast" :> Post '[PlainText] ())
 
-type BusinessLogicApi = ("add-mapping" :> (RePar "key" RedirectKey
-                                           :> RePar "destination" RedirectDest
-                                           :> Post '[PlainText] Bool
-                                           :<|> Get '[HTML] AddRedirectMappingPage
-                                           :<|> "via-form" :> ReqBody '[FormUrlEncoded] RedirectMappingForm :> Post '[PlainText] ())
-                          :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String
-                          :<|> Capture "key" RedirectKey :> Get '[PlainText] ())
+type BusinessLogicApi = (("add-mapping" :> (RePar "key" RedirectKey
+                                            :> RePar "destination" RedirectDest
+                                            :> Post '[PlainText] Bool
+                                            :<|> Get '[HTML] AddRedirectMappingPage
+                                            :<|> "via-form" :> ReqBody '[FormUrlEncoded] RedirectMappingForm :> Post '[PlainText] ()))
+                        :<|> "no-way" :> RePar "path" String :> Get '[PlainText] String
+                        :<|> "redirects-sorted-by-key" :> Get '[HTML] PageWithListOfRedirect
+                        :<|> Capture "key" RedirectKey :> Get '[PlainText] ())
 
 type MiscApi = ("static" :> Raw
                 :<|> "hello" :> Get '[PlainText] String
@@ -139,6 +145,7 @@ indexTail :: String
 indexTail = [r|
   <ul>
     <li><a href="/hello">Hello</a></li>
+    <li><a href="/redirects-sorted-by-key">all redirects sorted by key</a></li>
     <li><a href="/add-mapping">Add redirect mapping</a></li>
     <li><form method="POST" action="/die-fast"><button type="submit">Die Fast</button></form></li>
     <li><form method="POST" action="/die-slowly"><button type="submit">Die Slowly</button></form></li>
@@ -182,6 +189,25 @@ trans st rdr = Handler $ liftIO (try (runReaderT rdr st)) >>=
     Right ok -> return ok
 
 
+showRedirectsSortedByKey :: MyAppMo PageWithListOfRedirect
+showRedirectsSortedByKey = do
+  st <- ask
+  sortedPairs <- liftIO $ fmap L.sort $ CCM.unsafeToList $ m st
+  liftIO $ Prelude.putStrLn $ " pairs  " ++ show sortedPairs
+  return $ H.docTypeHtml $ do
+    H.head $ do
+      H.title "Redirects by key"
+    H.body $ do
+      H.h1 "Redirects by key"
+      forM_ [1,2,3] (\x -> return $ (H.p . H.toHtml . show) x) :: H.Html
+      --      H.table $ forM_ sortedPairs (\(key,dest) -> do
+      H.table $ do
+        forM_ sortedPairs (\(key,dest) -> do
+                              return $ H.tr $ do
+                                H.td $ H.toHtml key
+                                H.td $ H.toHtml $ destination (dest :: RedirectEntry))
+
+
 addRedirectMappingPage :: ReaderT MyAppState IO AddRedirectMappingPage
 addRedirectMappingPage = return $ H.docTypeHtml $ do
   H.head $ do
@@ -217,7 +243,7 @@ addRedirectMapping key dest = do
 
 
 funeral = dieSlowly :<|> dieFast
-businessLogic = (addRedirectMapping :<|> addRedirectMappingPage :<|> addRedirectMappingFromForm) :<|> noWay :<|> resolveAndRedirect
+businessLogic = (addRedirectMapping :<|> addRedirectMappingPage :<|> addRedirectMappingFromForm) :<|> noWay :<|> showRedirectsSortedByKey :<|> resolveAndRedirect
 misc = staticServer :<|> hello :<|> myIndex
 
 app :: MyAppState -> Application
