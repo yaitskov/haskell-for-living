@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 
 
@@ -43,7 +44,7 @@ import Control.Monad (forM_)
 import Servant.HTML.Blaze
 import qualified Text.Blaze.Html5 as H
 import qualified Text.Blaze.Html5.Attributes as A
-
+import Data.Typeable
 import GHC.Generics
 import Web.FormUrlEncoded (FromForm)
 
@@ -86,8 +87,11 @@ instance MimeRender Html String where
 instance {-# OVERLAPS #-} (Show a) => MimeRender PlainText a where
   mimeRender _ val = BSL.pack $ show val
 
+instance (Typeable b, H.ToMarkup a) => H.ToMarkup (Tagged b a) where --
+  toMarkup (Tagged a) = H.toMarkup a
+
 type MyAppMo = ReaderT MyAppState IO
-type PageWithListOfRedirect = H.Html -- Tagged "page-with-redirects" H.Html
+type PageWithListOfRedirect = Tagged "X" H.Html -- Tagged "page-with-redirects" H.Html
 
 type RePar = QueryParam' '[Required, Strict]
 
@@ -194,13 +198,11 @@ showRedirectsSortedByKey = do
   st <- ask
   sortedPairs <- liftIO $ fmap L.sort $ CCM.unsafeToList $ m st
   liftIO $ Prelude.putStrLn $ " pairs  " ++ show sortedPairs
-  return $ H.docTypeHtml $ do
+  return $ Tagged $ H.docTypeHtml $ do
     H.head $ do
       H.title "Redirects by key"
     H.body $ do
       H.h1 "Redirects by key"
-      -- forM_ [1,2,3] (\x -> return $ (H.p . H.toHtml . show) x) :: H.Html
-      --      H.table $ forM_ sortedPairs (\(key,dest) -> do
       H.table H.! H.customAttribute "border" "1" $ do
         forM_ sortedPairs (\(key,dest) -> H.tr  $ do
                               H.td $ H.toHtml key
