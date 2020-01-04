@@ -29,10 +29,10 @@ import qualified Data.List as L
 import qualified Data.Text as T
 import System.Exit
 import Control.Exception (try, throw, displayException)
---  import Control.Monad.Catch
+
 import Control.Monad.IO.Class (liftIO)
 import Control.Concurrent.Map as CCM
--- import Control.Concurrent.STM (readTVarIO, newTVarIO, atomically)
+
 import Data.IORef (readIORef, writeIORef, newIORef, IORef)
 import Control.Monad.Trans.Reader  (ReaderT, ask, runReaderT, runReader)
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
@@ -47,6 +47,7 @@ import qualified Text.Blaze.Html5.Attributes as A
 import Data.Typeable
 import GHC.Generics
 import Web.FormUrlEncoded (FromForm)
+import SnowflakePhantom
 
 C.include "<stdio.h>"
 C.include "<stdlib.h>"
@@ -91,7 +92,9 @@ instance (Typeable b, H.ToMarkup a) => H.ToMarkup (Tagged b a) where --
   toMarkup (Tagged a) = H.toMarkup a
 
 type MyAppMo = ReaderT MyAppState IO
-type PageWithListOfRedirect = Tagged "X" H.Html -- Tagged "page-with-redirects" H.Html
+
+snowTlake "PageWithListOfRedirect" ''H.Html
+
 
 type RePar = QueryParam' '[Required, Strict]
 
