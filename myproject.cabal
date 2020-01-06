@@ -16,12 +16,18 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Lib
-  other-modules:       SnowflakePhantom
+  other-modules:       SnowflakePhantom, Dao
   build-depends:       base >= 4.7 && < 5
                      , aeson
                      , servant-server
                      , wai
                      , warp
+                     , mysql-haskell
+                     , resource-pool
+                     , persistent
+                     , persistent-template
+                     , persistent-mysql-haskell
+                     , monad-logger
                      , transformers
                      , ctrie
                      , http-media

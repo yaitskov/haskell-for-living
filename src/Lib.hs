@@ -24,6 +24,7 @@ import Data.Aeson.TH
 import Text.RawString.QQ
 import Network.Wai
 import Network.Wai.Handler.Warp
+import Data.Coerce (coerce)
 import Servant
 import qualified Data.List as L
 import qualified Data.Text as T
@@ -31,15 +32,15 @@ import System.Exit
 import Control.Exception (try, throw, displayException)
 
 import Control.Monad.IO.Class (liftIO)
-import Control.Concurrent.Map as CCM
+import qualified Control.Concurrent.Map as CCM
 
 import Data.IORef (readIORef, writeIORef, newIORef, IORef)
 import Control.Monad.Trans.Reader  (ReaderT, ask, runReaderT, runReader)
 import Servant.Server.StaticFiles (serveDirectoryFileServer)
 import Network.HTTP.Media ((//), (/:))
-import Data.ByteString.Lazy.Char8 as BSL
-import Data.ByteString.Char8 as BS
-import Data.CaseInsensitive as CI
+import qualified Data.ByteString.Lazy.Char8 as BSL
+import qualified Data.ByteString.Char8 as BS
+import qualified  Data.CaseInsensitive as CI
 import Control.Monad (forM_)
 import Servant.HTML.Blaze
 import qualified Text.Blaze.Html5 as H
@@ -48,6 +49,9 @@ import Data.Typeable
 import GHC.Generics
 import Web.FormUrlEncoded (FromForm)
 import SnowflakePhantom
+import Dao -- (openDbPool, RedirectMappingR(..), Key(..))
+import Data.Pool (Pool)
+import Database.Persist.Sql (SqlBackend, Filter, Key, runSqlPool, selectList, delete, insert, entityVal)
 
 C.include "<stdio.h>"
 C.include "<stdlib.h>"
@@ -64,6 +68,7 @@ type RedirectKey = String
 
 data MyAppState = MyAppState {
   m :: CCM.Map RedirectKey RedirectEntry,
+  dbPool :: Pool SqlBackend,
   serverShutdown  :: IORef (IO ()),
   luckyNumber :: Integer
 }
@@ -181,12 +186,15 @@ myIndex = do
   return $ indexHead ++ (show . luckyNumber $ n) ++ indexTail
 
 initState = do
-  m <- CCM.empty
+  pool <- openDbPool
+  allRecords <- runSqlPool (selectList ([] :: [Filter RedirectMappingR]) []) pool
+  m <- CCM.fromList $ map (\r -> (redirectMappingRAnchor r, RedirectEntry $ redirectMappingRValue r)) $ map entityVal allRecords
   CCM.insert "default" RedirectEntry { destination = "http://ya.ru" } m
   CCM.insert "sam" RedirectEntry { destination = "http://cia.gov" } m
   shutdownCbBox <- liftIO $ newIORef (Prelude.putStrLn "Server shutdown callback is not set")
   return  MyAppState { m = m,
                        luckyNumber = 877,
+                       dbPool = pool,
                        serverShutdown = shutdownCbBox }
 
 trans :: MyAppState -> ReaderT MyAppState IO x -> Handler x
@@ -243,6 +251,7 @@ addRedirectMappingFromForm form = do
 addRedirectMapping :: RedirectKey -> RedirectDest -> ReaderT MyAppState IO Bool
 addRedirectMapping key dest = do
   st <- ask
+  runSqlPool (delete (RedirectMappingRKey key) >> insert (RedirectMappingR key dest)) $ dbPool st
   liftIO $ CCM.insert key RedirectEntry { destination = dest } $ m st
 
 
