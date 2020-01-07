@@ -7,15 +7,15 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Dao (
-  module Dao
-  -- RedirectMappingR(..),
-  -- Key(..),
-  -- openDbPool
+  RedirectMappingR(..),
+  Key(..),
+  openDbPool
   ) where
 
 import Control.Monad.Logger (NoLoggingT(..))
 import Data.Pool (Pool)
 -- import Database.Persist (SqlBackend)
+import Database.Persist.Class (Key(..))
 import Database.Persist.Sql (runSqlPool, SqlBackend)
 import Database.Persist.MySQL (createMySQLPool, mkMySQLConnectInfo)
 import Database.Persist.TH (persistLowerCase, mkPersist, sqlSettings)

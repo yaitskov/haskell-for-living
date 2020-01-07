@@ -49,7 +49,7 @@ import Data.Typeable
 import GHC.Generics
 import Web.FormUrlEncoded (FromForm)
 import SnowflakePhantom
-import Dao -- (openDbPool, RedirectMappingR(..), Key(..))
+import Dao (openDbPool, RedirectMappingR(..), Key(..))
 import Data.Pool (Pool)
 import Database.Persist.Sql (SqlBackend, Filter, Key, runSqlPool, selectList, delete, insert, entityVal)
 
