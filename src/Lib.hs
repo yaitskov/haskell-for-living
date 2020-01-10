@@ -49,9 +49,10 @@ import Data.Typeable
 import GHC.Generics
 import Web.FormUrlEncoded (FromForm)
 import SnowflakePhantom
-import Dao (openDbPool, RedirectMappingR(..), Key(..))
+import Dao (openDbPool, RedirectMappingR(..), Key(..), EntityField(RedirectMappingRValue))
 import Data.Pool (Pool)
-import Database.Persist.Sql (SqlBackend, Filter, Key, runSqlPool, selectList, delete, insert, entityVal)
+import Database.Persist ((=.))
+import Database.Persist.Sql (SqlBackend, Filter, Key, runSqlPool, selectList, upsert, entityVal)
 
 C.include "<stdio.h>"
 C.include "<stdlib.h>"
@@ -251,7 +252,7 @@ addRedirectMappingFromForm form = do
 addRedirectMapping :: RedirectKey -> RedirectDest -> ReaderT MyAppState IO Bool
 addRedirectMapping key dest = do
   st <- ask
-  runSqlPool (delete (RedirectMappingRKey key) >> insert (RedirectMappingR key dest)) $ dbPool st
+  runSqlPool (upsert (RedirectMappingR key dest) [RedirectMappingRValue =. dest]) $ dbPool st
   liftIO $ CCM.insert key RedirectEntry { destination = dest } $ m st
 
 

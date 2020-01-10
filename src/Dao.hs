@@ -8,14 +8,14 @@
 
 module Dao (
   RedirectMappingR(..),
+  EntityField(RedirectMappingRValue),
   Key(..),
   openDbPool
   ) where
 
 import Control.Monad.Logger (NoLoggingT(..))
 import Data.Pool (Pool)
--- import Database.Persist (SqlBackend)
-import Database.Persist.Class (Key(..))
+import Database.Persist.Class (Key(..), EntityField(..))
 import Database.Persist.Sql (runSqlPool, SqlBackend)
 import Database.Persist.MySQL (createMySQLPool, mkMySQLConnectInfo)
 import Database.Persist.TH (persistLowerCase, mkPersist, sqlSettings)
